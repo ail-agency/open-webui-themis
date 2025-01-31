@@ -65,6 +65,9 @@ export const replaceTokens = (content, sourceIds, char, user) => {
 		});
 	}
 
+	// ThemisAI: Remove all sources because no need to show users
+	content = content.replace(/<source_id>.*?<\/source_id>/g, '');
+
 	return content;
 };
 
