@@ -1514,7 +1514,7 @@ Respond to the user query using the provided context, incorporating inline citat
 
 ### Example of Citation:
 If the user asks about a specific topic and the information is found in "whitepaper.pdf" with a provided <source_id>, the response should include the citation like so:  
-* "According to the study, the proposed method increases efficiency by 20% [whitepaper.pdf]."
+* "According to [name of the source], the proposed method increases efficiency by 20%."
 If no <source_id> is present, the response should omit the citation.
 
 ### Output:
