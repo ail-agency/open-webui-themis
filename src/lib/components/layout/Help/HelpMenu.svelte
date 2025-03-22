@@ -17,7 +17,7 @@
 	export let onClose: Function = () => {};
 </script>
 
-<Dropdown
+<!-- <Dropdown
 	on:change={(e) => {
 		if (e.detail === false) {
 			onClose();
@@ -57,4 +57,4 @@
 			</DropdownMenu.Item>
 		</DropdownMenu.Content>
 	</div>
-</Dropdown>
+</Dropdown> -->
