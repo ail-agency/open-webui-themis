@@ -389,7 +389,7 @@
 						<div
 							class="px-3 pb-0.5 pt-1.5 text-left w-full flex flex-col absolute bottom-0 left-0 right-0 bg-gradient-to-t from-white dark:from-gray-900 z-10"
 						>
-							{#if selectedToolIds.length > 0}
+							<!-- {#if selectedToolIds.length > 0}
 								<div class="flex items-center justify-between w-full">
 									<div class="flex items-center gap-2.5 text-sm dark:text-gray-500">
 										<div class="pl-1">
@@ -419,7 +419,7 @@
 										</div>
 									</div>
 								</div>
-							{/if}
+							{/if} -->
 
 							{#if imageGenerationEnabled}
 								<div class="flex items-center justify-between w-full">
