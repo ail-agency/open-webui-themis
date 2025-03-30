@@ -96,7 +96,7 @@
 	{showRelevance}
 />
 
-<!-- {#if citations.length > 0}
+{#if citations.length > 0}
 	<div class=" py-0.5 -mx-0.5 w-full flex gap-1 items-center flex-wrap">
 		{#if citations.length <= 3}
 			<div class="flex text-xs font-medium flex-wrap">
@@ -203,4 +203,4 @@
 			</Collapsible>
 		{/if}
 	</div>
-{/if} -->
+{/if}
