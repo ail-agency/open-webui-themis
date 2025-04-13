@@ -762,8 +762,8 @@ async def update_query_settings(
         form_data.hybrid if form_data.hybrid else False
     )
 
-    if not request.app.state.config.ENABLE_RAG_HYBRID_SEARCH:
-        request.app.state.rf = None
+    # if not request.app.state.config.ENABLE_RAG_HYBRID_SEARCH:
+    #     request.app.state.rf = None
 
     return {
         "status": True,

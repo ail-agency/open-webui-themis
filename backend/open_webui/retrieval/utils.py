@@ -249,11 +249,58 @@ def get_all_items_from_collections(collection_names: list[str]) -> dict:
     return merge_get_results(results)
 
 
+def query_doc_with_reranking(
+    collection_name: str,
+    query: str,
+    embedding_function,
+    k: int,
+    reranking_function,
+    r: float,
+    k_reranker: int,
+) -> dict:
+    try:
+        vector_search_retriever = VectorSearchRetriever(
+            collection_name=collection_name,
+            embedding_function=embedding_function,
+            top_k=k,
+        )
+
+        compressor = RerankCompressor(
+            embedding_function=embedding_function,
+            top_n=k_reranker,
+            reranking_function=reranking_function,
+            r_score=r,
+        )
+
+        compression_retriever = ContextualCompressionRetriever(
+            base_compressor=compressor, base_retriever=vector_search_retriever
+        )
+
+        result = compression_retriever.invoke(query)
+        result = {
+            "distances": [[d.metadata.get("score") for d in result]],
+            "documents": [[d.page_content for d in result]],
+            "metadatas": [[d.metadata for d in result]],
+        }
+
+        print('resultresult', result)
+        log.info(
+            "query_doc_with_reranking:result "
+            + f'{result["metadatas"]} {result["distances"]}'
+        )
+        return result
+    except Exception as e:
+        raise e
+    
+
 def query_collection(
     collection_names: list[str],
     queries: list[str],
     embedding_function,
     k: int,
+    reranking_function,
+    r: float,
+    k_reranker: int,
 ) -> dict:
     results = []
     for query in queries:
@@ -261,13 +308,25 @@ def query_collection(
         for collection_name in collection_names:
             if collection_name:
                 try:
-                    result = query_doc(
-                        collection_name=collection_name,
-                        k=k,
-                        query_embedding=query_embedding,
-                    )
-                    if result is not None:
-                        results.append(result.model_dump())
+                    if not reranking_function:
+                        result = query_doc(
+                            collection_name=collection_name,
+                            k=k,
+                            query_embedding=query_embedding,
+                        )
+                        if result is not None:
+                            results.append(result.model_dump())
+                    else:
+                        result = query_doc_with_reranking(
+                            collection_name=collection_name,
+                            query=query,
+                            embedding_function=embedding_function,
+                            k=k,
+                            reranking_function=reranking_function,
+                            r=r,
+                            k_reranker=k_reranker,
+                        )
+                        results.append(result)
                 except Exception as e:
                     log.exception(f"Error when querying the collection: {e}")
             else:
@@ -524,13 +583,16 @@ def get_sources_from_files(
                                     "Error when using hybrid search, using"
                                     " non hybrid search as fallback."
                                 )
-
+                        print('collection_nameasdadasdas', reranking_function.config)
                         if (not hybrid_search) or (context is None):
                             context = query_collection(
                                 collection_names=collection_names,
                                 queries=queries,
                                 embedding_function=embedding_function,
                                 k=k,
+                                reranking_function=reranking_function,
+                                r=r,
+                                k_reranker=k_reranker,
                             )
                 except Exception as e:
                     log.exception(e)

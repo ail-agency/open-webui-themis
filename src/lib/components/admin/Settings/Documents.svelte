@@ -199,9 +199,7 @@
 		if (!BYPASS_EMBEDDING_AND_RETRIEVAL) {
 			await embeddingModelUpdateHandler();
 
-			if (querySettings.hybrid) {
-				await rerankingModelUpdateHandler();
-			}
+			await rerankingModelUpdateHandler();
 		}
 
 		const res = await updateRAGConfig(localStorage.token, {
@@ -697,7 +695,7 @@
 							</div>
 						</div>
 
-						{#if querySettings.hybrid === true}
+						
 							<div class="  mb-2.5 flex flex-col w-full">
 								<div class=" mb-1 text-xs font-medium">{$i18n.t('Reranking Model')}</div>
 
@@ -768,7 +766,6 @@
 									</div>
 								</div>
 							</div>
-						{/if}
 
 						<div class="  mb-2.5 flex w-full justify-between">
 							<div class=" self-center text-xs font-medium">{$i18n.t('Top K')}</div>
@@ -784,7 +781,6 @@
 							</div>
 						</div>
 
-						{#if querySettings.hybrid === true}
 							<div class="mb-2.5 flex w-full justify-between">
 								<div class="self-center text-xs font-medium">{$i18n.t('Top K Reranker')}</div>
 								<div class="flex items-center relative">
@@ -798,9 +794,7 @@
 									/>
 								</div>
 							</div>
-						{/if}
 
-						{#if querySettings.hybrid === true}
 							<div class="  mb-2.5 flex flex-col w-full justify-between">
 								<div class=" flex w-full justify-between">
 									<div class=" self-center text-xs font-medium">{$i18n.t('Minimum Score')}</div>
@@ -825,7 +819,6 @@
 									)}
 								</div>
 							</div>
-						{/if}
 					{/if}
 
 					<div class="  mb-2.5 flex flex-col w-full justify-between">
