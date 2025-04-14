@@ -583,7 +583,6 @@ def get_sources_from_files(
                                     "Error when using hybrid search, using"
                                     " non hybrid search as fallback."
                                 )
-                        print('collection_nameasdadasdas', reranking_function.config)
                         if (not hybrid_search) or (context is None):
                             context = query_collection(
                                 collection_names=collection_names,
