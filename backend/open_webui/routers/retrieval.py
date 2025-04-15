@@ -84,6 +84,7 @@ from open_webui.config import (
     DEFAULT_LOCALE,
     RAG_EMBEDDING_CONTENT_PREFIX,
     RAG_EMBEDDING_QUERY_PREFIX,
+    RERANKING_MODEL_API_KEY,
 )
 from open_webui.env import (
     SRC_LOG_LEVELS,
@@ -129,24 +130,34 @@ def get_rf(
 ):
     rf = None
     if reranking_model:
+        model_path = get_model_path(reranking_model, auto_update)
         if any(model in reranking_model for model in ["jinaai/jina-colbert-v2"]):
             try:
                 from open_webui.retrieval.models.colbert import ColBERT
 
                 rf = ColBERT(
-                    get_model_path(reranking_model, auto_update),
+                    model_path,
                     env="docker" if DOCKER else None,
                 )
 
             except Exception as e:
                 log.error(f"ColBERT: {e}")
                 raise Exception(ERROR_MESSAGES.DEFAULT(e))
+        elif reranking_model.startswith("jina-reranker"):
+            try:
+                from open_webui.retrieval.models.jina_remote import JinaRemoteReranker
+
+                log.info(f"Using JinaRemoteReranker: {reranking_model}")
+                rf = JinaRemoteReranker(reranking_model, RERANKING_MODEL_API_KEY)
+            except Exception as e:
+                log.error(f"JinaReranker error: {e}")
+                raise Exception(ERROR_MESSAGES.DEFAULT(e))
         else:
             import sentence_transformers
 
             try:
                 rf = sentence_transformers.CrossEncoder(
-                    get_model_path(reranking_model, auto_update),
+                    model_path,
                     device=DEVICE_TYPE,
                     trust_remote_code=RAG_RERANKING_MODEL_TRUST_REMOTE_CODE,
                 )

@@ -18,7 +18,7 @@ from open_webui.models.users import UserModel
 from open_webui.models.files import Files
 
 from open_webui.retrieval.vector.main import GetResult
-
+import concurrent.futures
 
 from open_webui.env import (
     SRC_LOG_LEVELS,
@@ -283,7 +283,6 @@ def query_doc_with_reranking(
             "metadatas": [[d.metadata for d in result]],
         }
 
-        print('resultresult', result)
         log.info(
             "query_doc_with_reranking:result "
             + f'{result["metadatas"]} {result["distances"]}'
@@ -291,7 +290,7 @@ def query_doc_with_reranking(
         return result
     except Exception as e:
         raise e
-    
+
 
 def query_collection(
     collection_names: list[str],
@@ -451,6 +450,144 @@ def get_embedding_function(
         raise ValueError(f"Unknown embedding engine: {embedding_engine}")
 
 
+def get_sources_from_single_file(
+    file,
+    queries,
+    embedding_function,
+    k,
+    reranking_function,
+    k_reranker,
+    r,
+    hybrid_search,
+    full_context=False,
+    request=None,
+):
+    context = None
+    if file.get("docs"):
+        # BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL
+        context = {
+            "documents": [[doc.get("content") for doc in file.get("docs")]],
+            "metadatas": [[doc.get("metadata") for doc in file.get("docs")]],
+        }
+    elif file.get("context") == "full":
+        # Manual Full Mode Toggle
+        context = {
+            "documents": [[file.get("file").get("data", {}).get("content")]],
+            "metadatas": [[{"file_id": file.get("id"), "name": file.get("name")}]],
+        }
+    elif (
+        file.get("type") != "web_search"
+        and request.app.state.config.BYPASS_EMBEDDING_AND_RETRIEVAL
+    ):
+        # BYPASS_EMBEDDING_AND_RETRIEVAL
+        if file.get("type") == "collection":
+            file_ids = file.get("data", {}).get("file_ids", [])
+
+            documents = []
+            metadatas = []
+            for file_id in file_ids:
+                file_object = Files.get_file_by_id(file_id)
+
+                if file_object:
+                    documents.append(file_object.data.get("content", ""))
+                    metadatas.append(
+                        {
+                            "file_id": file_id,
+                            "name": file_object.filename,
+                            "source": file_object.filename,
+                        }
+                    )
+
+            context = {
+                "documents": [documents],
+                "metadatas": [metadatas],
+            }
+
+        elif file.get("id"):
+            file_object = Files.get_file_by_id(file.get("id"))
+            if file_object:
+                context = {
+                    "documents": [[file_object.data.get("content", "")]],
+                    "metadatas": [
+                        [
+                            {
+                                "file_id": file.get("id"),
+                                "name": file_object.filename,
+                                "source": file_object.filename,
+                            }
+                        ]
+                    ],
+                }
+        elif file.get("file").get("data"):
+            context = {
+                "documents": [[file.get("file").get("data", {}).get("content")]],
+                "metadatas": [[file.get("file").get("data", {}).get("metadata", {})]],
+            }
+    else:
+        collection_names = []
+        if file.get("type") == "collection":
+            if file.get("legacy"):
+                collection_names = file.get("collection_names", [])
+            else:
+                collection_names.append(file["id"])
+        elif file.get("collection_name"):
+            collection_names.append(file["collection_name"])
+        elif file.get("id"):
+            if file.get("legacy"):
+                collection_names.append(f"{file['id']}")
+            else:
+                collection_names.append(f"file-{file['id']}")
+
+        # collection_names = set(collection_names).difference(extracted_collections)
+        if not collection_names:
+            log.debug(f"skipping {file} as it has already been extracted")
+            return None
+
+        if full_context:
+            try:
+                context = get_all_items_from_collections(collection_names)
+            except Exception as e:
+                log.exception(e)
+
+        else:
+            try:
+                context = None
+                if file.get("type") == "text":
+                    context = file["content"]
+                else:
+                    if hybrid_search:
+                        try:
+                            context = query_collection_with_hybrid_search(
+                                collection_names=collection_names,
+                                queries=queries,
+                                embedding_function=embedding_function,
+                                k=k,
+                                reranking_function=reranking_function,
+                                k_reranker=k_reranker,
+                                r=r,
+                            )
+                        except Exception as e:
+                            log.debug(
+                                "Error when using hybrid search, using"
+                                " non hybrid search as fallback."
+                            )
+                    if (not hybrid_search) or (context is None):
+                        context = query_collection(
+                            collection_names=collection_names,
+                            queries=queries,
+                            embedding_function=embedding_function,
+                            k=k,
+                            reranking_function=reranking_function,
+                            r=r,
+                            k_reranker=k_reranker,
+                        )
+            except Exception as e:
+                log.exception(e)
+
+        # extracted_collections.extend(collection_names)
+    return context
+
+
 def get_sources_from_files(
     request,
     files,
@@ -467,143 +604,41 @@ def get_sources_from_files(
         f"files: {files} {queries} {embedding_function} {reranking_function} {full_context}"
     )
 
-    extracted_collections = []
+    # extracted_collections = []
     relevant_contexts = []
 
+    work_items = []
     for file in files:
+        work_items.append((file))
 
-        context = None
-        if file.get("docs"):
-            # BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL
-            context = {
-                "documents": [[doc.get("content") for doc in file.get("docs")]],
-                "metadatas": [[doc.get("metadata") for doc in file.get("docs")]],
-            }
-        elif file.get("context") == "full":
-            # Manual Full Mode Toggle
-            context = {
-                "documents": [[file.get("file").get("data", {}).get("content")]],
-                "metadatas": [[{"file_id": file.get("id"), "name": file.get("name")}]],
-            }
-        elif (
-            file.get("type") != "web_search"
-            and request.app.state.config.BYPASS_EMBEDDING_AND_RETRIEVAL
-        ):
-            # BYPASS_EMBEDDING_AND_RETRIEVAL
-            if file.get("type") == "collection":
-                file_ids = file.get("data", {}).get("file_ids", [])
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=min(len(work_items), 10)
+    ) as executor:
+        futures = [
+            executor.submit(
+                get_sources_from_single_file,
+                file,
+                queries,
+                embedding_function,
+                k,
+                reranking_function,
+                k_reranker,
+                r,
+                hybrid_search,
+                full_context,
+                request,
+            )
+            for file in work_items
+        ]
 
-                documents = []
-                metadatas = []
-                for file_id in file_ids:
-                    file_object = Files.get_file_by_id(file_id)
+        # Gather results as they complete
+        for future in concurrent.futures.as_completed(futures):
+            context = future.result()
+            if context:
+                if "data" in file:
+                    del file["data"]
 
-                    if file_object:
-                        documents.append(file_object.data.get("content", ""))
-                        metadatas.append(
-                            {
-                                "file_id": file_id,
-                                "name": file_object.filename,
-                                "source": file_object.filename,
-                            }
-                        )
-
-                context = {
-                    "documents": [documents],
-                    "metadatas": [metadatas],
-                }
-
-            elif file.get("id"):
-                file_object = Files.get_file_by_id(file.get("id"))
-                if file_object:
-                    context = {
-                        "documents": [[file_object.data.get("content", "")]],
-                        "metadatas": [
-                            [
-                                {
-                                    "file_id": file.get("id"),
-                                    "name": file_object.filename,
-                                    "source": file_object.filename,
-                                }
-                            ]
-                        ],
-                    }
-            elif file.get("file").get("data"):
-                context = {
-                    "documents": [[file.get("file").get("data", {}).get("content")]],
-                    "metadatas": [
-                        [file.get("file").get("data", {}).get("metadata", {})]
-                    ],
-                }
-        else:
-            collection_names = []
-            if file.get("type") == "collection":
-                if file.get("legacy"):
-                    collection_names = file.get("collection_names", [])
-                else:
-                    collection_names.append(file["id"])
-            elif file.get("collection_name"):
-                collection_names.append(file["collection_name"])
-            elif file.get("id"):
-                if file.get("legacy"):
-                    collection_names.append(f"{file['id']}")
-                else:
-                    collection_names.append(f"file-{file['id']}")
-
-            collection_names = set(collection_names).difference(extracted_collections)
-            if not collection_names:
-                log.debug(f"skipping {file} as it has already been extracted")
-                continue
-
-            if full_context:
-                try:
-                    context = get_all_items_from_collections(collection_names)
-                except Exception as e:
-                    log.exception(e)
-
-            else:
-                try:
-                    context = None
-                    if file.get("type") == "text":
-                        context = file["content"]
-                    else:
-                        if hybrid_search:
-                            try:
-                                context = query_collection_with_hybrid_search(
-                                    collection_names=collection_names,
-                                    queries=queries,
-                                    embedding_function=embedding_function,
-                                    k=k,
-                                    reranking_function=reranking_function,
-                                    k_reranker=k_reranker,
-                                    r=r,
-                                )
-                            except Exception as e:
-                                log.debug(
-                                    "Error when using hybrid search, using"
-                                    " non hybrid search as fallback."
-                                )
-                        if (not hybrid_search) or (context is None):
-                            context = query_collection(
-                                collection_names=collection_names,
-                                queries=queries,
-                                embedding_function=embedding_function,
-                                k=k,
-                                reranking_function=reranking_function,
-                                r=r,
-                                k_reranker=k_reranker,
-                            )
-                except Exception as e:
-                    log.exception(e)
-
-            extracted_collections.extend(collection_names)
-
-        if context:
-            if "data" in file:
-                del file["data"]
-
-            relevant_contexts.append({**context, "file": file})
-
+                relevant_contexts.append({**context, "file": file})
     sources = []
     for context in relevant_contexts:
         try:
