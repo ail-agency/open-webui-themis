@@ -836,12 +836,23 @@ def save_docs_to_vector_db(
                 log.info(f"Document with hash {metadata['hash']} already exists")
                 raise ValueError(ERROR_MESSAGES.DUPLICATE_CONTENT)
 
+    if add:
+        file_collection_name = f'file-{metadata["file_id"]}'
+        file_data = VECTOR_DB_CLIENT.get_raw_data(file_collection_name)
+        VECTOR_DB_CLIENT.insert_raw_data(collection_name, file_data)
+        log.info(
+            f"Migrate vectors from {file_collection_name} to {collection_name} successfully"
+        )
+        return True
+
     if split:
         if request.app.state.config.TEXT_SPLITTER in ["", "character"]:
             text_splitter = RecursiveCharacterTextSplitter(
                 chunk_size=request.app.state.config.CHUNK_SIZE,
                 chunk_overlap=request.app.state.config.CHUNK_OVERLAP,
                 add_start_index=True,
+                # The default separators are ["\n\n", "\n", " ", ""], but "\n\n" or "\n" can cause the very short chunks like page numbers
+                separators=[" ", ""],
             )
         elif request.app.state.config.TEXT_SPLITTER == "token":
             log.info(
