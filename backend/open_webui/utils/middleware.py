@@ -1131,9 +1131,9 @@ async def process_chat_response(
 
                     await background_tasks_handler()
 
-            return response
+            return {**response, "events": events} if events else response
         else:
-            return response
+            return {**response, "events": events} if events else response
 
     # Non standard response
     if not any(
